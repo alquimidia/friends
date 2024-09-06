@@ -472,7 +472,7 @@ class Frontend {
 		} elseif ( ! empty( $_SERVER['HTTP_REFERER'] ) ) {
 			wp_safe_redirect( remove_query_arg( 'in_reply_to', add_query_arg( 'result', $result, $_SERVER['HTTP_REFERER'] ) ) );
 		}
-		exit;
+		wp_redirect( '/friends/' );
 		// phpcs:enable WordPress.Security.ValidatedSanitizedInput.MissingUnslash
 		// phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 	}
