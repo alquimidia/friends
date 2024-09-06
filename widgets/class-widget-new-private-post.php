@@ -58,7 +58,7 @@ class Widget_New_Private_Post extends \WP_Widget {
 			echo wp_kses( sprintf( __( '(You can also use the <a href=%1$s>WordPress editor</a> and set %2$s to %3$s.)', 'friends' ), '"' . self_admin_url( 'post-new.php' ) . '"', __( 'Visibility' ), __( 'Private' ) ), array( 'a' => array( 'href' => array() ) ) ); // phpcs:ignore WordPress.WP.I18n.MissingArgDomain
 			?>
 			</small>
-			<input type="hidden" name="status" value="private" /></span>
+			<!-- <input type="hidden" name="status" value="private" /></span>-->
 		</form>
 		<?php
 		echo $args['after_widget'];
