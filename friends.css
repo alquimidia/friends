@@ -1899,7 +1899,7 @@ input.disabled+.form-icon {
 
 .navbar {
     align-items: stretch;
-    display: flex;
+    display: none;
     flex-wrap: wrap;
     justify-content: space-between
 }
