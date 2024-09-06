@@ -136,14 +136,19 @@ svg:not(:root) {
 }
 
 button,
-input,
 optgroup,
-select,
-textarea {
+select {
     font-family: inherit;
     font-size: inherit;
     line-height: inherit;
     margin: 0
+}
+
+input,
+textarea {
+    line-height: inherit;
+    margin: 0;
+    width: 100%;
 }
 
 button,
@@ -3027,7 +3032,7 @@ h2#page-title a.dashicons {
 }
 
 .friends-page .friends-brand {
-    position: fixed
+    display: none;
 }
 
 .friends-page .friends-brand .friends-logo a,
@@ -3063,12 +3068,10 @@ h2#page-title a.dashicons {
 }
 
 .friends-page #friends-sidebar .friends-nav {
-    bottom: 1.5rem;
     -webkit-overflow-scrolling: touch;
     overflow-y: auto;
     padding: .5rem 1.5rem;
     position: fixed;
-    top: 5.5rem;
     width: 12rem
 }
 
