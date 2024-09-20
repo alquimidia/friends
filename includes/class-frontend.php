@@ -1251,7 +1251,7 @@ class Frontend {
 		$query->is_single = false;
 		$query->queried_object = null;
 		$query->queried_object_id = null;
-		$post_types = apply_filters( 'friends_frontend_post_types', array() );
+		$post_types = apply_filters( 'friends_frontend_post_types', array('post') );
 
 		if ( 'status' === $post_format ) {
 			// Show your own posts on the status feed.
