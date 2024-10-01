@@ -1124,6 +1124,8 @@ class Frontend {
 	public function friend_posts_query( $query ) {
 		global $wp_query, $wp, $authordata;
 		if ( $wp_query !== $query || $query->is_admin() || $query->is_home() ) {
+			$post_types = apply_filters( 'friends_frontend_post_types', array('post') );
+			$query->set( 'post_type', $post_types );
 			return $query;
 		}
 
