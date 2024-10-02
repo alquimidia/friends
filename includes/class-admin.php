@@ -622,14 +622,14 @@ class Admin {
 		add_thickbox();
 		wp_enqueue_script( 'updates' );
 
-		Friends::template_loader()->get_template_part(
-			'admin/settings-header',
-			null,
-			array(
-				'active' => 'friends',
-				'title'  => __( 'Friends', 'friends' ),
-			)
-		);
+		// Friends::template_loader()->get_template_part(
+		// 	'admin/settings-header',
+		// 	null,
+		// 	array(
+		// 		'active' => 'friends',
+		// 		'title'  => __( 'Friends', 'friends' ),
+		// 	)
+		// );
 
 		Friends::template_loader()->get_template_part( 'admin/welcome', null, array( 'installed_plugins' => get_plugins() ) );
 
