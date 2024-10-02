@@ -811,7 +811,7 @@ class Frontend {
 	 * @return     string  The modified title.
 	 */
 	public function header_widget_title( $title ) {
-		$title = '<a href="' . esc_url( home_url( '/friends/' ) ) . '">' . esc_html( $title ) . '</a>';
+		$title = '<a href="' . esc_url( home_url( 'friends/' ) ) . '">' . esc_html( $title ) . '</a>';
 		if ( $this->author ) {
 			$title .= ' &raquo; <a href="' . esc_url( $this->author->get_local_friends_page_url() ) . '">' . esc_html( $this->author->display_name ) . '</a>';
 		}
