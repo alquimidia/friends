@@ -2788,7 +2788,7 @@ a.text-error:visited {
 }
 
 .off-canvas .off-canvas-content {
-    margin-top: 32px;
+    /* margin-top: 32px; */
     padding-top: 1rem;
     padding-left: 1rem;
     padding-right: 1rem
@@ -2811,7 +2811,7 @@ a.text-error:visited {
 }
 
 .off-canvas .off-canvas-sidebar {
-    margin-top: 32px;
+    /* margin-top: 32px; */
     width: 12rem;
     background: #f7f8f9
 }
@@ -3144,7 +3144,9 @@ h2#page-title a.dashicons {
     font-size: .7rem;
     text-transform: uppercase;
     font-weight: bold;
-    letter-spacing: 2px
+    letter-spacing: 2px;
+    letter-spacing: 2px;
+    color: #2e5bec;
 }
 
 .friends-page section.posts .card header.entry-header {
