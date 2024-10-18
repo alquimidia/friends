@@ -488,8 +488,10 @@ class Frontend {
 			wp_safe_redirect( remove_query_arg( 'in_reply_to', add_query_arg( 'result', $result, $_SERVER['HTTP_REFERER'] ) ) );
 			exit;
 		}
+
 		wp_safe_redirect( home_url( '/friends/' ) );
 		exit;
+
 		// phpcs:enable WordPress.Security.ValidatedSanitizedInput.MissingUnslash
 		// phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 	}
@@ -1175,6 +1177,8 @@ class Frontend {
 	public function friend_posts_query( $query ) {
 		global $wp_query, $wp, $authordata;
 		if ( $wp_query !== $query || $query->is_admin() || $query->is_home() ) {
+			$post_types = apply_filters( 'friends_frontend_post_types', array('post') );
+			$query->set( 'post_type', $post_types );
 			return $query;
 		}
 
@@ -1308,7 +1312,7 @@ class Frontend {
 		$query->is_single = false;
 		$query->queried_object = null;
 		$query->queried_object_id = null;
-		$post_types = apply_filters( 'friends_frontend_post_types', array() );
+		$post_types = apply_filters( 'friends_frontend_post_types', array('post') );
 
 		if ( 'status' === $post_format ) {
 			// Show your own posts on the status feed.

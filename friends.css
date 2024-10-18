@@ -34,6 +34,10 @@ body {
     margin: 0
 }
 
+#wpadminbar{
+	display: none !important
+}
+
 article,
 aside,
 footer,
@@ -1894,7 +1898,7 @@ input.disabled+.form-icon {
 
 .navbar {
     align-items: stretch;
-    display: flex;
+    display: none;
     flex-wrap: wrap;
     justify-content: space-between
 }
@@ -2088,7 +2092,7 @@ summary.accordion-header::-webkit-details-marker {
     color: #2e5bec
 }
 
-.nav .nav-item.active>a {
+.nav .nav-item.active>a 
     color: hsl(246, 30.487804878%, 47.1568627451%);
     font-weight: bold
 }
@@ -2806,10 +2810,6 @@ a.text-error:visited {
     margin-bottom: 32px
 }
 
-.off-canvas .off-canvas-content header.navbar.no-bottom-margin {
-    margin-bottom: 0
-}
-
 .off-canvas .off-canvas-sidebar {
     margin-top: 32px;
     width: 12rem;
@@ -3031,7 +3031,7 @@ h2#page-title a.dashicons {
 }
 
 .friends-page .friends-brand {
-    position: fixed
+    display: none;
 }
 
 .friends-page .friends-brand .friends-logo a,
@@ -3072,7 +3072,7 @@ h2#page-title a.dashicons {
     overflow-y: auto;
     padding: .5rem 1.5rem;
     position: fixed;
-    top: 5.5rem;
+    top: 2.5rem;
     width: 12rem
 }
 
@@ -3144,8 +3144,7 @@ h2#page-title a.dashicons {
     font-size: .7rem;
     text-transform: uppercase;
     font-weight: bold;
-    letter-spacing: 2px;
-    color: #2e5bec;
+    letter-spacing: 2px
 }
 
 .friends-page section.posts .card header.entry-header {
@@ -3349,47 +3348,6 @@ h2#page-title a.dashicons {
     display: block
 }
 
-.friends-page section.followers ul li {
-    list-style: none
-}
-
-.friends-page section.followers ul li .already-following {
-    color: #ccc
-}
-
-.friends-page section.followers ul li img {
-    vertical-align: middle
-}
-
-.friends-page section.followers ul li .follower .ab-icon .dashicons.dashicons-plus,
-.friends-page section.followers ul li .follower .ab-icon .dashicons.dashicons-yes {
-    color: #32c170;
-    font-size: .5em;
-    margin-left: -1.5em;
-    margin-top: -2.1em
-}
-
-.friends-page section.followers ul li .follower .ab-icon .dashicons.dashicons-no {
-    color: #dc1717;
-    font-size: .5em;
-    margin-left: -1.5em;
-    margin-top: -2.1em
-}
-
-.friends-page section.followers ul li .form-icon.loading {
-    margin-left: 1em
-}
-
-.friends-page section.followers ul li details summary span {
-    margin-left: .5em;
-    border-bottom: 1px solid #ccc
-}
-
-.friends-page section.followers ul li details summary span span {
-    margin-left: 0;
-    border-bottom: 0
-}
-
 .friends-page ul.friend-posts img.avatar {
     vertical-align: middle;
     margin-right: .3em
@@ -3498,3 +3456,4 @@ h2#page-title a.dashicons {
     border-radius: 20px;
 }
 /*# sourceMappingURL=friends.css.map */
+
