@@ -5,9 +5,11 @@
 - Requires at least: 5.0
 - Tested up to: 6.6
 - License: GPL-2.0-or-later
-- Stable tag: 2.9.5
+- Stable tag: 3.1.2
 
 Your own WordPress at the center of your online activity. Follow friends and other websites and establish friendship relationships between blogs.
+
+[![Active Installs](https://img.shields.io/wordpress/plugin/installs/friends?logo=wordpress&logoColor=%23fff&label=Active%20Installs&labelColor=%2323282dA&color=%2323282dA)](https://wordpress.org/plugins/friends/) [![Playground Demo Link](https://img.shields.io/wordpress/plugin/v/friends?logo=wordpress&logoColor=%23fff&label=Playground%20Demo&labelColor=%233858e9&color=%233858e9)](https://playground.wordpress.net/?networking=yes&blueprint-url=https://raw.githubusercontent.com/akirk/friends/refs/heads/main/assets/blueprints/blueprint.json) [![Configured Playground Demo Link](https://img.shields.io/wordpress/plugin/v/friends?logo=wordpress&logoColor=%23fff&label=Configured%20Playground%20Demo&labelColor=%23089809&color=%23089809)](https://playground.wordpress.net/?networking=yes&blueprint-url=https://raw.githubusercontent.com/akirk/friends/refs/heads/main/assets/blueprints/blueprint-prefilled.json)
 
 ## Description
 
@@ -94,6 +96,47 @@ There is a cache of your friends post in form of a Custom Post Type friend_post 
 
 ## Changelog
 
+### 3.1.2
+- Fix support for threads.net ([#378])
+- Add a warning if a user has not enabled ActivityPub on their threads.net account ([#377])
+- Upgrade and improve the MF2 library ([#374])
+
+### 3.1.1
+- Improve Name Detection ([#372])
+- Add a Button to the Welcome page ([#373])
+
+### 3.1.0
+- Add mark tag CSS to emails to ensure highlighting ([#365])
+- Only show the dashboard widgets if the user has enough permissions ([#368])
+- Prevent retrieving the same feed in parallel ([#366])
+- Add Friend: Use more info from the given URL ([#369])
+- Log ActivityPub actions and add the publish date to Announcements ([#364])
+- Improve OPML Support ([#370])
+- Update blueprints for previewing in WordPress Playground ([#371])
+
+### 3.0.0
+- Show Mutual Followers and allow removing of followers ([#359])
+- Add an e-mail notification for new and lost followers ([#358])
+- Add the ability to disable notifications per post format and feed parser ([#357])
+- Fix 404 on the New private post widget props @liviacarolgouvea ([#361])
+- Improve ghost.org ActivityPub compatibility ([#356])
+
+### 2.9.9
+- Avoid fatal when no user login can be found during boosting ([#355])
+- A small update of a filter for Enable Mastodon Apps 0.9.8
+
+### 2.9.8
+- Fix ActivityPub preview and use more details when creating the user ([#354])
+
+### 2.9.7
+- Fix boost button ([#353])
+
+### 2.9.6
+- Allow creating multiple dashboard widgets in ([#349])
+- Add support for double-encoded HTML entities in RSS in ([#352])
+- Expose the list of your followers and make it easy to follow back in ([#351])
+- Fixed a bug that could cause double items on initial feed refresh.
+
 ### 2.9.5
 - Don't override ActivityPub mentions ([#345])
 - Add a dashboard widget ([#346])
@@ -111,6 +154,29 @@ There is a cache of your friends post in form of a Custom Post Type friend_post 
 - Fix the all postids query ([#335])
 - Don't define a wp-editor dependency ([#332])
 
+[#378]: https://github.com/akirk/friends/pull/378
+[#377]: https://github.com/akirk/friends/pull/377
+[#374]: https://github.com/akirk/friends/pull/374
+[#372]: https://github.com/akirk/friends/pull/372
+[#373]: https://github.com/akirk/friends/pull/373
+[#365]: https://github.com/akirk/friends/pull/365
+[#368]: https://github.com/akirk/friends/pull/368
+[#366]: https://github.com/akirk/friends/pull/366
+[#369]: https://github.com/akirk/friends/pull/369
+[#364]: https://github.com/akirk/friends/pull/364
+[#370]: https://github.com/akirk/friends/pull/370
+[#371]: https://github.com/akirk/friends/pull/371
+[#359]: https://github.com/akirk/friends/pull/359
+[#358]: https://github.com/akirk/friends/pull/358
+[#357]: https://github.com/akirk/friends/pull/357
+[#361]: https://github.com/akirk/friends/pull/361
+[#356]: https://github.com/akirk/friends/pull/356
+[#355]: https://github.com/akirk/friends/pull/355
+[#354]: https://github.com/akirk/friends/pull/354
+[#353]: https://github.com/akirk/friends/pull/353
+[#349]: https://github.com/akirk/friends/pull/349
+[#352]: https://github.com/akirk/friends/pull/352
+[#351]: https://github.com/akirk/friends/pull/351
 [#345]: https://github.com/akirk/friends/pull/345
 [#346]: https://github.com/akirk/friends/pull/346
 [#347]: https://github.com/akirk/friends/pull/347

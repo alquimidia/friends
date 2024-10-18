@@ -193,6 +193,25 @@ class User extends \WP_User {
 	}
 
 	/**
+	 * Discover a user login from feeds
+	 *
+	 * @param  array $feeds A list of feeds.
+	 * @return string The corresponding user login.
+	 */
+	public static function get_user_login_from_feeds( $feeds ) {
+		foreach ( $feeds as $feed ) {
+			if ( isset( $feed['suggested-username'] ) ) {
+				return sanitize_text_field( $feed['suggested-username'] );
+			}
+		}
+		$display_name = self::get_display_name_from_feeds( $feeds );
+		if ( $display_name ) {
+			return self::sanitize_username( $display_name );
+		}
+
+		return false;
+	}
+	/**
 	 * Discover a display name from feeds
 	 *
 	 * @param  array $feeds A list of feeds.
@@ -200,8 +219,9 @@ class User extends \WP_User {
 	 */
 	public static function get_display_name_from_feeds( $feeds ) {
 		foreach ( $feeds as $feed ) {
-			if ( 'self' === $feed['rel'] ) {
-				return sanitize_text_field( $feed['title'] );
+			if ( 'self' === $feed['rel'] && ! empty( $feed['title'] ) ) {
+				$name = preg_replace( '/(\s[–—|-]|[:,])\s.*$/u', '', $feed['title'] );
+				return sanitize_text_field( $name );
 			}
 		}
 
@@ -224,6 +244,9 @@ class User extends \WP_User {
 			return false;
 		}
 		$path = wp_parse_url( $url, PHP_URL_PATH );
+		if ( ! $path ) {
+			$path = '';
+		}
 
 		$site_id = get_blog_id_from_url( $host, trailingslashit( $path ) );
 		if ( ! $site_id ) {
@@ -1213,7 +1236,13 @@ class User extends \WP_User {
 		if ( $post_id ) {
 			$path = '/' . $post_id . '/';
 		}
-		return home_url( '/friends/' . self::get_user_login_for_url( $this->user_login ) . $path );
+
+		$user_login = self::get_user_login_for_url( $this->user_login );
+		if ( ! $user_login || is_wp_error( $user_login ) ) {
+			return home_url( '/friends/' . $path );
+		}
+
+		return home_url( '/friends/' . $user_login . $path );
 	}
 
 	/**

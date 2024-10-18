@@ -47,6 +47,13 @@ class Frontend {
 	public $post_format = false;
 
 	/**
+	 * Whether a specific template was selected to load.
+	 *
+	 * @var string|false
+	 */
+	public $template = false;
+
+	/**
 	 * Whether a reaciton is being displayed
 	 *
 	 * @var string|false
@@ -95,6 +102,7 @@ class Frontend {
 		add_filter( 'body_class', array( $this, 'add_body_class' ) );
 
 		add_filter( 'friends_override_author_name', array( $this, 'override_author_name' ), 10, 3 );
+		add_filter( 'friends_friend_posts_query_viewable', array( $this, 'expose_opml' ), 10, 2 );
 	}
 
 	/**
@@ -106,6 +114,7 @@ class Frontend {
 
 		$rules = array(
 			'^friends/(.*)/(?:feed/)?(feed|rdf|rss|rss2|atom)/?$' => 'index.php?pagename=friends/$matches[1]&feed=$matches[2]',
+			'^friends/feed/?$'       => 'index.php?pagename=friends&feed=feed',
 			'^friends/(.*)/(\d+)/?$' => 'index.php?pagename=friends/$matches[1]&page=$matches[2]',
 			'^friends/(.*)'          => 'index.php?pagename=friends/$matches[1]',
 		);
@@ -235,6 +244,9 @@ class Frontend {
 				'current_page'       => get_query_var( 'paged' ) ? get_query_var( 'paged' ) : 1,
 				'max_page'           => $wp_query->max_num_pages,
 			);
+
+			// translators: %s is a user handle.
+			$variables['text_confirm_delete_follower'] = __( 'Do you really want to delete the follower %s?', 'friends' );
 			wp_localize_script( 'friends', 'friends', $variables );
 
 			$handle = 'friends';
@@ -469,10 +481,17 @@ class Frontend {
 		// phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 		if ( ! empty( $_SERVER['HTTP_X_REQUESTED_WITH'] ) && strtolower( $_SERVER['HTTP_X_REQUESTED_WITH'] ) === 'xmlhttprequest' ) {
 			echo esc_html( $result );
-		} elseif ( ! empty( $_SERVER['HTTP_REFERER'] ) ) {
-			wp_safe_redirect( remove_query_arg( 'in_reply_to', add_query_arg( 'result', $result, $_SERVER['HTTP_REFERER'] ) ) );
+			exit;
 		}
-		wp_redirect( 'friends/' );
+
+		if ( ! empty( $_SERVER['HTTP_REFERER'] ) ) {
+			wp_safe_redirect( remove_query_arg( 'in_reply_to', add_query_arg( 'result', $result, $_SERVER['HTTP_REFERER'] ) ) );
+			exit;
+		}
+
+		wp_safe_redirect( home_url( '/friends/' ) );
+		exit;
+
 		// phpcs:enable WordPress.Security.ValidatedSanitizedInput.MissingUnslash
 		// phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 	}
@@ -776,6 +795,21 @@ class Frontend {
 			return $template;
 		}
 
+		global $args;
+		$args = array(
+			'friends'     => $this->friends,
+			'friend_user' => $this->author,
+			'post_format' => $this->post_format,
+		);
+
+		if ( $this->template ) {
+			global $wp_query;
+			$wp_query->is_404 = false;
+
+			status_header( 200 );
+			return Friends::template_loader()->get_template_part( $this->template, null, $args, false );
+		}
+
 		if ( isset( $_GET['refresh'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			add_filter( 'notify_about_new_friend_post', '__return_false', 999 );
 			add_filter(
@@ -787,20 +821,23 @@ class Frontend {
 			$this->friends->feed->retrieve_friend_posts( true );
 		}
 
-		global $args;
-		$args = array(
-			'friends'               => $this->friends,
-			'friend_user'           => $this->author,
-			'frontend_default_view' => get_option( 'friends_frontend_default_view', 'expanded' ),
-			'blocks-everywhere'     => false,
-			'post_format'           => $this->post_format,
-		);
+		$args['frontend_default_view'] = get_option( 'friends_frontend_default_view', 'expanded' );
+		$args['blocks-everywhere']     = false;
 
 		if ( isset( $_GET['welcome'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			$args['show_welcome'] = true;
 		}
 
 		return Friends::template_loader()->get_template_part( 'frontend/index', $this->post_format, $args, false );
+	}
+
+	public function get_static_frontend_template( $path ) {
+		switch ( $path ) {
+			case 'followers':
+				return 'frontend/followers';
+		}
+
+		return 'frontend/index';
 	}
 
 	/**
@@ -973,13 +1010,26 @@ class Frontend {
 		return $author_name;
 	}
 
+	public function expose_opml( $viewable, $pagename ) {
+		if ( 'opml' === $pagename ) {
+			return true;
+		}
+		return $viewable;
+	}
+
 	/**
 	 * Render the Friends OPML
 	 *
 	 * @param      bool $only_public  Only public feed URLs.
 	 */
 	protected function render_opml( $only_public = false ) {
-		$user = wp_get_current_user();
+		if ( ! \is_user_logged_in() ) {
+			$only_public = true;
+			$user_id = Friends::get_main_friend_user_id();
+			$user = new User( $user_id );
+		} else {
+			$user = wp_get_current_user();
+		}
 
 		// translators: %s is a name.
 		$title = sprintf( __( "%s' Subscriptions", 'friends' ), $user->display_name );
@@ -993,7 +1043,7 @@ class Frontend {
 		$feeds = array();
 		$users = array();
 
-		$friend_users = new User_Query( array( 'role__in' => array( 'friend', 'acquaintance', 'friend_request', 'subscription' ) ) );
+		$friend_users = User_Query::all_associated_users();
 		foreach ( $friend_users->get_results() as $friend_user ) {
 			$role = $friend_user->get_role_name( true, 9 );
 			if ( $only_public ) {
@@ -1013,6 +1063,9 @@ class Frontend {
 				$need_local_feed = false;
 
 				foreach ( $user_feeds as $feed ) {
+					if ( $feed->get_parser() === Feed_Parser_SimplePie::SLUG ) {
+						break;
+					}
 					switch ( $feed->get_mime_type() ) {
 						case 'application/atom+xml':
 						case 'application/atomxml':
@@ -1238,6 +1291,12 @@ class Frontend {
 							$query->set_404();
 							return $query;
 						}
+
+						$template = $this->get_static_frontend_template( $current_part );
+						if ( $template ) {
+							$this->template = $template;
+							return $query;
+						}
 						wp_safe_redirect( home_url( '/friends/' ) );
 						exit;
 					}
@@ -1272,7 +1331,7 @@ class Frontend {
 		}
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 		$query->is_page = false;
-		$query->is_comments_feed = false;
+		$query->is_comment_feed = false;
 		$query->set( 'pagename', null );
 		$query->set( 'category_name', null );
 		if ( 'collapsed' === get_option( 'friends_frontend_default_view', 'expanded' ) && get_option( 'posts_per_page' ) < 20 ) {

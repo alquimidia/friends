@@ -127,6 +127,9 @@ foreach ( $args['feeds'] as $feed_url => $details ) {
 			<tr>
 				<th scope="row"><?php esc_html_e( 'Subscription', 'friends' ); ?></th>
 				<td>
+					<?php if ( ! empty( $args['feeds_notice'] ) ) : ?>
+						<strong><?php echo wp_kses( $args['feeds_notice'], array( 'a' => array( 'href' => array() ) ) ); ?></strong>
+					<?php endif; ?>
 					<ul>
 					<?php foreach ( $args['feeds'] as $feed_url => $details ) : ?>
 						<?php
@@ -187,7 +190,7 @@ foreach ( $args['feeds'] as $feed_url => $details ) {
 									)
 								);
 								?>
-							<p class="description details hidden">
+							<p class="description details">
 								<?php
 								// translators: %s is the type of a feed, for example Atom or RSS.
 								echo esc_html( sprintf( __( 'Type: %s', 'friends' ), $details['type'] ) );

@@ -442,13 +442,14 @@
 					post_id: $this.data( 'id' ),
 				},
 				success( result ) {
-					if ( 'boosted' === result.status ) {
+					if ( 'boosted' === result ) {
 						$this
 							.find( 'i.friends-boost-status' )
 							.addClass( 'dashicons dashicons-saved' );
 					} else {
 						$this
 							.find( 'i.friends-boost-status' )
+							.addClass( 'dashicons dashicons-warning' )
 							.removeClass( 'dashicons-saved' );
 					}
 				},
@@ -600,4 +601,45 @@
 		$( '#quick-post-panel' ).toggleClass( 'open' );
 		return false;
 	} );
+
+	// when the ".followers details" html element is expanded
+	$document.on( 'click', '.followers details', function () {
+		const $this = $( this );
+		if ( $this.find( '.loading-posts' ).length ) {
+			wp.ajax.send( 'friends-preview-activitypub', {
+				data: {
+					_ajax_nonce: $this.data( 'nonce' ),
+					url: $this.data( 'id' ),
+					followers: $this.data('followers' ),
+					following: $this.data('following' ),
+				},
+				success( result ) {
+					$this.find('.loading-posts').hide().after( result.posts );
+					$this.find('.their-followers').text( result.followers );
+					$this.find('.their-following').text( result.following );
+				},
+				error( result ) {
+					$this.find('.loading-posts').text( result.map(function( error ) { return error.message || error.code; } ).join( ',' ) );
+				}
+			} );
+		}
+	} );
+
+	$document.on( 'click', '.follower-delete', function () {
+		const $this = $( this );
+		if ( ! confirm( friends.text_confirm_delete_follower.replace( /%s/, $this.data( 'handle' )) ) ) {
+			return false;
+		}
+		wp.ajax.send( 'friends-delete-follower', {
+			data: {
+				_ajax_nonce: $this.data( 'nonce' ),
+				id: $this.data( 'id' ),
+			},
+			success() {
+				$this.closest( 'details' ).remove();
+			},
+		} );
+		return false;
+	} );
+
 } )( jQuery, window.wp, window.friends );

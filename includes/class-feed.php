@@ -113,7 +113,18 @@ class Feed {
 	 * Cron function to refresh the feeds of the friends' blogs
 	 */
 	public function cron_friends_refresh_feeds() {
-		$this->retrieve_friend_posts();
+		foreach ( User_Feed::get_all_due() as $feed ) {
+			if ( ! $feed->can_be_polled_now() ) {
+				continue;
+			}
+			$feed->set_polling_now();
+			$this->retrieve_feed( $feed );
+			$feed->was_polled();
+			$friend_user = $feed->get_friend_user();
+			if ( $friend_user ) {
+				$friend_user->delete_outdated_posts();
+			}
+		}
 	}
 
 	/**
@@ -129,7 +140,8 @@ class Feed {
 
 		foreach ( $friend_user->get_active_feeds() as $feed ) {
 			$friend_user = $feed->get_friend_user();
-			if ( $friend_user ) {
+			if ( $friend_user && $feed->can_be_polled_now() ) {
+				$feed->set_polling_now();
 				$this->retrieve_feed( $feed );
 				$feed->was_polled();
 				$friend_user->delete_outdated_posts();
@@ -140,15 +152,27 @@ class Feed {
 	/**
 	 * Preview a URL using a parser.
 	 *
-	 * @param      string $parser   The parser slug.
-	 * @param      string $url      The url.
-	 * @param      int    $feed_id  The feed id.
+	 * @param      string|Feed_Parser $parser   The parser or its slug slug.
+	 * @param      string             $url      The url.
+	 * @param      int                $feed_id  The feed id.
 	 *
-	 * @return     array|\WP_error  The feed items.
+	 * @return     array|\WP_Error  The feed items.
 	 */
 	public function preview( $parser, $url, $feed_id = null ) {
-		if ( ! isset( $this->parsers[ $parser ] ) ) {
-			return new \WP_Error( 'unknown-parser', __( 'An unknown parser name was supplied.', 'friends' ) );
+		if ( is_string( $parser ) ) {
+			if ( ! isset( $this->parsers[ $parser ] ) ) {
+				return new \WP_Error(
+					'unknown-parser',
+					sprintf(
+						// translators: %s is a parser name.
+						__( 'An unknown parser name was supplied: %s', 'friends' ),
+						$parser
+					)
+				);
+			}
+			$parser = $this->parsers[ $parser ];
+		} elseif ( ! $parser instanceof Feed_Parser_V2 ) {
+			return new \WP_Error( 'invalid-parser', __( 'An invalid parser was supplied.', 'friends' ) );
 		}
 
 		$user_feed = null;
@@ -160,7 +184,7 @@ class Feed {
 			}
 		}
 
-		$items = $this->parsers[ $parser ]->fetch_feed( $url, $user_feed );
+		$items = $parser->fetch_feed( $url, $user_feed );
 
 		if ( ! is_wp_error( $items ) ) {
 			if ( empty( $items ) ) {
@@ -248,19 +272,19 @@ class Feed {
 				}
 
 				if ( $keyword_match ) {
-					$notified = apply_filters( 'notify_keyword_match_post', false, $post, $keyword_match );
+					$notified = apply_filters( 'friends_notify_keyword_match_post', false, $post, $keyword_match );
 					if ( $notified ) {
 						continue;
 					}
 				}
 			}
 
-			$notify_users = apply_filters( 'notify_about_new_friend_post', true, $friend_user, $post_id, $user_feed );
+			$notify_users = apply_filters( 'notify_about_new_friend_post', true, $friend_user, $post_id, $user_feed, $keyword_match );
 			if ( $notify_users ) {
 				if ( ! $post ) {
 					$post = get_post( intval( $post_id ) );
 				}
-				do_action( 'notify_new_friend_post', $post, $user_feed );
+				do_action( 'notify_new_friend_post', $post, $user_feed, $keyword_match );
 			}
 		}
 	}
@@ -268,10 +292,11 @@ class Feed {
 	/**
 	 * Retrieve posts from all friends.
 	 *
-	 * @param      bool $also_undue     Whether to get also undue feeds.
+	 * @param      bool $ignore_due_date     Whether to get also undue feeds.
 	 */
-	public function retrieve_friend_posts( $also_undue = false ) {
-		foreach ( User_Feed::get_all_due( $also_undue ) as $feed ) {
+	public function retrieve_friend_posts( $ignore_due_date = false ) {
+		foreach ( User_Feed::get_all_due( $ignore_due_date ) as $feed ) {
+			$feed->set_polling_now();
 			$this->retrieve_feed( $feed );
 			$feed->was_polled();
 			$friend_user = $feed->get_friend_user();
@@ -570,7 +595,7 @@ class Feed {
 			}
 
 			if ( is_null( $post_id ) ) {
-				$post_id = self::url_to_postid( $item->permalink, $friend_user->ID );
+				$post_id = self::url_to_postid( $item->permalink );
 			}
 			$item->_is_new = is_null( $post_id );
 			$item = apply_filters( 'friends_modify_feed_item', $item, $user_feed, $friend_user, $post_id );
@@ -836,18 +861,18 @@ class Feed {
 			$content_type = strtok( $headers['content-type'], ';' );
 		}
 
-		if ( $content ) {
-			foreach ( $this->parsers as $slug => $parser ) {
-				foreach ( $parser->discover_available_feeds( $content, $url ) as $link_url => $feed ) {
-					if ( isset( $available_feeds[ $link_url ] ) ) {
-						// If this parser tells us it can parse it right away, allow it to override.
-						if ( isset( $available_feeds[ $link_url ]['parser'] ) || ! isset( $feed['parser'] ) ) {
-							continue;
-						}
+		foreach ( $this->parsers as $slug => $parser ) {
+			foreach ( $parser->discover_available_feeds( $content, $url ) as $link_url => $feed ) {
+				if ( isset( $available_feeds[ $link_url ] ) ) {
+					// If this parser tells us it can parse it right away, allow it to override.
+					if ( isset( $available_feeds[ $link_url ]['parser'] ) || ! isset( $feed['parser'] ) ) {
+						continue;
 					}
-					$available_feeds[ $link_url ] = $feed;
-					$available_feeds[ $link_url ]['url'] = $link_url;
+				} else {
+					$available_feeds[ $link_url ] = array();
 				}
+				$available_feeds[ $link_url ] = array_merge( $available_feeds[ $link_url ], $feed );
+				$available_feeds[ $link_url ]['url'] = $link_url;
 			}
 		}
 
@@ -891,7 +916,6 @@ class Feed {
 				'title'             => '',
 				'parser'            => 'unsupported',
 				'parser_confidence' => 0,
-
 			);
 
 			foreach ( $this->parsers as $slug => $parser ) {
@@ -1027,6 +1051,7 @@ class Feed {
 		$has_self = false;
 		$links = array();
 		$mf = Mf2\parse( $content, $url );
+
 		if ( isset( $mf['rel-urls'] ) ) {
 			$links = array_merge( $links, $mf['rel-urls'] );
 		}
@@ -1064,7 +1089,7 @@ class Feed {
 				continue;
 			}
 
-			if ( 'self' === $rel ) {
+			if ( 'self' === $discovered_feeds[ $feed_url ]['rel'] ) {
 				$has_self = true;
 			}
 
@@ -1079,19 +1104,31 @@ class Feed {
 			}
 		}
 
-		if ( ! $has_self && class_exists( '\DOMXpath' ) ) {
-			// Convert to a DomDocument and silence the errors while doing so.
-			$doc = new \DomDocument();
-			set_error_handler( '__return_null' ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_set_error_handler
-			$doc->loadHTML( $content );
-			restore_error_handler();
+		if ( ! $has_self ) {
+			$discovered_feeds[ $url ] = array(
+				'rel' => 'self',
+			);
+		}
+		if ( empty( $discovered_feeds[ $url ]['title'] ) && ! empty( $mf['metas']['application-name'][0] ) ) {
+			$discovered_feeds[ $url ]['title'] = $mf['metas']['application-name'][0];
+		}
+		if ( empty( $discovered_feeds[ $url ]['title'] ) && ! empty( $mf['metas']['og:title'][0] ) ) {
+			$discovered_feeds[ $url ]['title'] = $mf['metas']['og:title'][0];
+		}
+		if ( empty( $discovered_feeds[ $url ]['title'] ) && ! empty( $mf['title'] ) ) {
+			$discovered_feeds[ $url ]['title'] = $mf['title'];
+		}
+		if ( empty( $discovered_feeds[ $url ]['avatar'] ) && ! empty( $mf['rels']['icon'] ) ) {
+			foreach ( $mf['rels']['icon'] as $icon_url ) {
+				if ( ! filter_var( $icon_url, FILTER_VALIDATE_URL ) ) {
+					continue;
+				}
 
-			$xpath = new \DOMXpath( $doc );
-			if ( $xpath ) {
-				$discovered_feeds[ $url ] = array(
-					'rel'   => 'self',
-					'title' => $xpath->query( '//title' )->item( 0 )->textContent,
-				);
+				if ( ! isset( $mf['rel-urls'][ $icon_url ]['type'] ) || 0 !== strpos( $mf['rel-urls'][ $icon_url ]['type'], 'image/' ) ) {
+					continue;
+				}
+
+				$discovered_feeds[ $url ]['avatar'] = $icon_url;
 			}
 		}
 

@@ -3,7 +3,7 @@
  * Plugin name: Friends
  * Plugin author: Alex Kirk
  * Plugin URI: https://github.com/akirk/friends
- * Version: 2.9.5
+ * Version: 3.1.2
  * Requires PHP: 5.6
 
  * Description: A social network between WordPresses. Privacy focused, by itself a self-hosted RSS++ reader with notifications.
@@ -25,7 +25,7 @@ defined( 'ABSPATH' ) || exit;
 define( 'FRIENDS_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'FRIENDS_PLUGIN_BASENAME', plugin_basename( __FILE__ ) );
 define( 'FRIENDS_PLUGIN_FILE', plugin_dir_path( __FILE__ ) . '/' . basename( __FILE__ ) );
-define( 'FRIENDS_VERSION', '2.9.5' );
+define( 'FRIENDS_VERSION', '3.1.2' );
 
 require_once __DIR__ . '/libs/Mf2/Parser.php';
 
@@ -45,6 +45,7 @@ require_once __DIR__ . '/includes/class-automatic-status.php';
 require_once __DIR__ . '/includes/class-blocks.php';
 require_once __DIR__ . '/includes/class-feed.php';
 require_once __DIR__ . '/includes/class-frontend.php';
+require_once __DIR__ . '/includes/class-import.php';
 require_once __DIR__ . '/includes/class-logging.php';
 require_once __DIR__ . '/includes/class-messages.php';
 require_once __DIR__ . '/includes/class-notifications.php';

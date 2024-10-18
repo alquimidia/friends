@@ -64,7 +64,7 @@ class Feed_Parser_ActivityPub extends Feed_Parser_V2 {
 		\add_filter( 'friends_edit_feeds_after_form_submit', array( $this, 'activitypub_save_settings' ), 10 );
 		\add_filter( 'friends_modify_feed_item', array( $this, 'modify_incoming_item' ), 9, 3 );
 		\add_filter( 'friends_potential_avatars', array( $this, 'friends_potential_avatars' ), 10, 2 );
-		\add_filter( 'friends_suggest_user_login', array( $this, 'suggest_user_login' ), 10, 2 );
+		\add_filter( 'friends_suggest_user_login', array( $this, 'suggest_user_login_from_url' ), 10, 2 );
 		\add_filter( 'friends_author_avatar_url', array( $this, 'author_avatar_url' ), 10, 3 );
 
 		\add_action( 'template_redirect', array( $this, 'cache_reply_to_boost' ) );
@@ -89,7 +89,7 @@ class Feed_Parser_ActivityPub extends Feed_Parser_V2 {
 		add_action( 'friends_post_footer_first', array( $this, 'boost_button' ) );
 		\add_filter( 'friends_search_autocomplete', array( $this, 'friends_search_autocomplete' ), 10, 2 );
 
-		add_action( 'wp_ajax_friends-boost', array( $this, 'wp_ajax_boost' ) );
+		add_action( 'wp_ajax_friends-boost', array( $this, 'ajax_boost' ) );
 		\add_action( 'mastodon_api_reblog', array( $this, 'mastodon_api_reblog' ) );
 		\add_action( 'mastodon_api_unreblog', array( $this, 'mastodon_api_unreblog' ) );
 
@@ -103,10 +103,13 @@ class Feed_Parser_ActivityPub extends Feed_Parser_V2 {
 		add_filter( 'mastodon_api_account', array( $this, 'mastodon_api_account_augment_friend_posts' ), 9, 4 );
 		add_filter( 'mastodon_api_status', array( $this, 'mastodon_api_status_add_reblogs' ), 40, 3 );
 		add_filter( 'mastodon_api_canonical_user_id', array( $this, 'mastodon_api_canonical_user_id' ), 20, 3 );
-		add_filter( 'mastodon_api_comment_parent_post_id', array( $this, 'mastodon_api_comment_parent_post_id' ), 25 );
+		add_filter( 'mastodon_api_comment_parent_post_id', array( $this, 'mastodon_api_in_reply_to_id' ), 25 );
+		add_filter( 'mastodon_api_in_reply_to_id', array( $this, 'mastodon_api_in_reply_to_id' ), 25 );
 		add_filter( 'friends_cache_url_post_id', array( $this, 'check_url_to_postid' ), 10, 2 );
 
 		add_action( 'friends_comments_form', array( self::class, 'comment_form' ) );
+		add_action( 'wp_ajax_friends-preview-activitypub', array( $this, 'ajax_preview' ) );
+		add_action( 'wp_ajax_friends-delete-follower', array( $this, 'ajax_delete_follower' ) );
 	}
 
 	public function friends_add_friends_input_placeholder() {
@@ -353,7 +356,7 @@ class Feed_Parser_ActivityPub extends Feed_Parser_V2 {
 		return $this->mapped_usernames[ $user_id ];
 	}
 
-	public function mastodon_api_comment_parent_post_id( $in_reply_to_id ) {
+	public function mastodon_api_in_reply_to_id( $in_reply_to_id ) {
 		$in_reply_to_id = \Enable_Mastodon_Apps\Mastodon_API::maybe_get_remapped_url( $in_reply_to_id );
 		if ( ! is_string( $in_reply_to_id ) ) {
 			return $in_reply_to_id;
@@ -495,6 +498,11 @@ class Feed_Parser_ActivityPub extends Feed_Parser_V2 {
 		$feed_details['next-poll'] = gmdate( 'Y-m-d H:i:s', time() + YEAR_IN_SECONDS );
 		$feed_details['post-format'] = 'status';
 
+		$feed_details['type'] = 'application/activity+json';
+		$feed_details['autoselect'] = true;
+
+		$feed_details['suggested-username'] = str_replace( ' ', '-', sanitize_user( $meta['name'] ) );
+
 		return $feed_details;
 	}
 
@@ -618,35 +626,41 @@ class Feed_Parser_ActivityPub extends Feed_Parser_V2 {
 		}
 
 		$outbox = json_decode( wp_remote_retrieve_body( $response ), true );
-		if ( ! isset( $outbox['first'] ) ) {
-			return new \WP_Error( 'activitypub_could_not_find_outbox_first_page', null, compact( 'url', 'meta', 'outbox' ) );
-		}
 
-		$response = \Activitypub\safe_remote_get( $outbox['first'], Friends::get_main_friend_user_id() );
-		if ( is_wp_error( $response ) || 200 !== wp_remote_retrieve_response_code( $response ) ) {
-			return new \WP_Error(
-				'activitypub_could_not_get_outbox',
-				null,
-				array(
-					'meta' => $outbox,
-					$url   => $outbox['first'],
-				)
-			);
-		}
-		$outbox_page = json_decode( wp_remote_retrieve_body( $response ), true );
-		if ( ! isset( $outbox_page['type'] ) || 'OrderedCollectionPage' !== $outbox_page['type'] ) {
-			return new \WP_Error(
-				'activitypub_outbox_page_invalid_type',
-				null,
-				array(
-					'outbox_page' => $outbox_page,
-					$url          => $outbox['first'],
-				)
-			);
+		if ( ! isset( $outbox['orderedItems'] ) ) {
+			if ( ! isset( $outbox['first'] ) ) {
+				return new \WP_Error( 'activitypub_could_not_find_outbox_first_page', null, compact( 'url', 'meta', 'outbox' ) );
+			}
+
+			$response = \Activitypub\safe_remote_get( $outbox['first'], Friends::get_main_friend_user_id() );
+			if ( is_wp_error( $response ) || 200 !== wp_remote_retrieve_response_code( $response ) ) {
+				return new \WP_Error(
+					'activitypub_could_not_get_outbox',
+					null,
+					array(
+						'meta' => $outbox,
+						$url   => $outbox['first'],
+					)
+				);
+			}
+			$outbox_page = json_decode( wp_remote_retrieve_body( $response ), true );
+
+			if ( ! isset( $outbox_page['type'] ) || 'OrderedCollectionPage' !== $outbox_page['type'] ) {
+				return new \WP_Error(
+					'activitypub_outbox_page_invalid_type',
+					null,
+					array(
+						'outbox_page' => $outbox_page,
+						$url          => $outbox['first'],
+					)
+				);
+			}
+
+			$outbox = $outbox_page;
 		}
 
 		$items = array();
-		foreach ( $outbox_page['orderedItems'] as $object ) {
+		foreach ( $outbox['orderedItems'] as $object ) {
 			$type = strtolower( $object['type'] );
 			$items[] = $this->process_incoming_activity( $type, $object, get_current_user_id(), $user_feed );
 		}
@@ -654,7 +668,7 @@ class Feed_Parser_ActivityPub extends Feed_Parser_V2 {
 		return $items;
 	}
 
-	public function suggest_user_login( $login, $url ) {
+	public function suggest_user_login_from_url( $login, $url ) {
 		if ( preg_match( '#^https?://([^/]+)/users/([^/]+)#', $url, $m ) ) {
 			return $m[2] . '-' . $m[1];
 		}
@@ -1534,16 +1548,23 @@ class Feed_Parser_ActivityPub extends Feed_Parser_V2 {
 
 	public function the_content( $the_content ) {
 		$protected_tags = array();
-		$the_content = preg_replace_callback(
-			'#<a.*?href=[^>]+>.*?</a>#i',
-			function ( $m ) use ( &$protected_tags ) {
-				$c = count( $protected_tags );
-				$protect = '!#!#PROTECT' . $c . '#!#!';
-				$protected_tags[ $protect ] = $m[0];
-				return $protect;
-			},
-			$the_content
-		);
+		foreach ( array(
+			'#<a.*?href=[^>]+>.*?</a>#i', // leave the inside of links alone.
+			'#<script[^>]*>.*?</script>#i', // leave the inside of scripts alone.
+			'#<style[^>]*>.*?</script>#i', // leave the inside of styles alone.
+			'#<[^>]+>#i', // leave the inside of any tags alone.
+		) as $regex ) {
+			$the_content = preg_replace_callback(
+				$regex,
+				function ( $m ) use ( &$protected_tags ) {
+					$c = count( $protected_tags );
+					$protect = '!#!#PROTECT' . $c . '#!#!';
+					$protected_tags[ $protect ] = $m[0];
+					return $protect;
+				},
+				$the_content
+			);
+		}
 
 		$the_content = \preg_replace_callback( '/@(?:[a-zA-Z0-9_-]+)/', array( $this, 'replace_with_links' ), $the_content );
 
@@ -1776,10 +1797,6 @@ class Feed_Parser_ActivityPub extends Feed_Parser_V2 {
 	 */
 	public function activitypub_like_post( $url, $external_post_id, $user_id ) {
 		$type = 'Like';
-		$inbox = self::get_inbox_by_actor( $url, $type );
-		if ( is_wp_error( $inbox ) ) {
-			return $inbox;
-		}
 		$actor = \get_author_posts_url( $user_id );
 
 		$activity = new \Activitypub\Activity\Activity();
@@ -1789,8 +1806,34 @@ class Feed_Parser_ActivityPub extends Feed_Parser_V2 {
 		$activity->set_actor( $actor );
 		$activity->set_object( $external_post_id );
 		$activity->set_id( $actor . '#like-' . \preg_replace( '~^https?://~', '', $external_post_id ) );
-		$activity = $activity->to_json();
-		$response = \Activitypub\safe_remote_post( $inbox, $activity, $user_id );
+		$activity->set_published( \gmdate( 'Y-m-d\TH:i:s\Z', time() ) );
+
+		$inboxes = apply_filters( 'activitypub_send_to_inboxes', array(), $user_id, $activity );
+		$inboxes = array_unique( $inboxes );
+
+		if ( empty( $inboxes ) ) {
+			$message = sprintf(
+				// translators: %s is the URL of the post.
+				__( 'Like failed for %s', 'friends' ),
+				'<a href="' . esc_url( $url ) . '">' . $url . '</a>'
+			);
+
+			$details = array(
+				'url'   => $url,
+				'error' => __( 'No inboxes to send to.', 'friends' ),
+			);
+
+			Logging::log( 'like-failed', $message, $details, self::SLUG, $user_id );
+			return;
+		}
+
+		$json = $activity->to_json();
+
+		$report = array();
+		foreach ( $inboxes as $inbox ) {
+			$response = \Activitypub\safe_remote_post( $inbox, $json, $user_id );
+			$report[ $inbox ] = wp_remote_retrieve_response_message( $response );
+		}
 
 		$user_feed = User_Feed::get_by_url( $url );
 		if ( $user_feed instanceof User_Feed ) {
@@ -1802,6 +1845,19 @@ class Feed_Parser_ActivityPub extends Feed_Parser_V2 {
 				)
 			);
 		}
+		$type = 'like';
+		$message = sprintf(
+			// translators: %s is the URL of the post.
+			__( 'Liked %s', 'friends' ),
+			'<a href="' . esc_url( $external_post_id ) . '">' . $external_post_id . '</a>'
+		);
+		$details = array(
+			'actor'   => $actor,
+			'url'     => $external_post_id,
+			'inboxes' => $report,
+		);
+
+		Logging::log( 'like', $message, $details, self::SLUG, $user_id );
 	}
 
 	/**
@@ -1861,10 +1917,6 @@ class Feed_Parser_ActivityPub extends Feed_Parser_V2 {
 	 */
 	public function activitypub_unlike_post( $url, $external_post_id, $user_id ) {
 		$type = 'Like';
-		$inbox = self::get_inbox_by_actor( $url, $type );
-		if ( is_wp_error( $inbox ) ) {
-			return $inbox;
-		}
 		$actor = \get_author_posts_url( $user_id );
 
 		$activity = new \Activitypub\Activity\Activity();
@@ -1881,8 +1933,33 @@ class Feed_Parser_ActivityPub extends Feed_Parser_V2 {
 			)
 		);
 		$activity->set_id( $actor . '#unlike-' . \preg_replace( '~^https?://~', '', $external_post_id ) );
-		$activity = $activity->to_json();
-		$response = \Activitypub\safe_remote_post( $inbox, $activity, $user_id );
+
+		$inboxes = apply_filters( 'activitypub_send_to_inboxes', array(), $user_id, $activity );
+		$inboxes = array_unique( $inboxes );
+
+		if ( empty( $inboxes ) ) {
+			$message = sprintf(
+				// translators: %s is the URL of the post.
+				__( 'Unlike failed for %s', 'friends' ),
+				'<a href="' . esc_url( $url ) . '">' . $url . '</a>'
+			);
+
+			$details = array(
+				'url'   => $url,
+				'error' => __( 'No inboxes to send to.', 'friends' ),
+			);
+
+			Logging::log( 'unlike-failed', $message, $details, self::SLUG, $user_id );
+			return;
+		}
+
+		$json = $activity->to_json();
+
+		$report = array();
+		foreach ( $inboxes as $inbox ) {
+			$response = \Activitypub\safe_remote_post( $inbox, $json, $user_id );
+			$report[ $inbox ] = wp_remote_retrieve_response_message( $response );
+		}
 
 		$user_feed = User_Feed::get_by_url( $url );
 		if ( $user_feed instanceof User_Feed ) {
@@ -1894,6 +1971,19 @@ class Feed_Parser_ActivityPub extends Feed_Parser_V2 {
 				)
 			);
 		}
+		$type = 'unlike';
+		$message = sprintf(
+			// translators: %s is the URL of the post.
+			__( 'Unliked %s', 'friends' ),
+			'<a href="' . esc_url( $external_post_id ) . '">' . $external_post_id . '</a>'
+		);
+		$details = array(
+			'actor'   => $actor,
+			'url'     => $external_post_id,
+			'inboxes' => $report,
+		);
+
+		Logging::log( 'unlike', $message, $details, self::SLUG, $user_id );
 	}
 
 	public function boost_button() {
@@ -1966,8 +2056,7 @@ class Feed_Parser_ActivityPub extends Feed_Parser_V2 {
 		apply_filters( 'friends_unreact', null, $post_id, $reaction );
 	}
 
-
-	public function wp_ajax_boost() {
+	public function ajax_boost() {
 		if ( ! current_user_can( Friends::REQUIRED_ROLE ) ) {
 			wp_send_json_error( 'error' );
 		}
@@ -1991,6 +2080,7 @@ class Feed_Parser_ActivityPub extends Feed_Parser_V2 {
 
 		wp_send_json_success( 'boosted', array( 'id' => $post->ID ) );
 	}
+
 	public function mastodon_api_reblog( $post_id ) {
 		$this->queue_announce( get_permalink( $post_id ) );
 	}
@@ -2075,18 +2165,48 @@ class Feed_Parser_ActivityPub extends Feed_Parser_V2 {
 		$activity->set_actor( $actor );
 		$activity->set_object( $url );
 		$activity->set_id( $actor . '#activitypub_announce-' . \preg_replace( '~^https?://~', '', $url ) );
+		$activity->set_to( 'https://www.w3.org/ns/activitystreams#Public' );
+		$activity->set_published( \gmdate( 'Y-m-d\TH:i:s\Z', time() ) );
 
-		$follower_inboxes  = \Activitypub\Collection\Followers::get_inboxes( $user_id );
-		$mentioned_inboxes = \Activitypub\Mention::get_inboxes( $activity->get_cc() );
-
-		$inboxes = array_merge( $follower_inboxes, $mentioned_inboxes );
+		$inboxes = apply_filters( 'activitypub_send_to_inboxes', array(), $user_id, $activity );
 		$inboxes = array_unique( $inboxes );
+
+		if ( empty( $inboxes ) ) {
+			$message = sprintf(
+				// translators: %s is the URL of the post.
+				__( 'Announce failed for %s', 'friends' ),
+				'<a href="' . esc_url( $url ) . '">' . $url . '</a>'
+			);
+
+			$details = array(
+				'url'   => $url,
+				'error' => __( 'No inboxes to send to.', 'friends' ),
+			);
+
+			Logging::log( 'announce-failed', $message, $details, self::SLUG, $user_id );
+			return;
+		}
 
 		$json = $activity->to_json();
 
+		$report = array();
 		foreach ( $inboxes as $inbox ) {
-			\Activitypub\safe_remote_post( $inbox, $json, $user_id );
+			$response = \Activitypub\safe_remote_post( $inbox, $json, $user_id );
+			$report[ $inbox ] = wp_remote_retrieve_response_message( $response );
 		}
+
+		$message = sprintf(
+			// translators: %s is the URL of the post.
+			__( 'Announced %s', 'friends' ),
+			'<a href="' . esc_url( $url ) . '">' . $url . '</a>'
+		);
+
+		$details = array(
+			'url'     => $url,
+			'inboxes' => $report,
+		);
+
+		Logging::log( 'announce', $message, $details, self::SLUG, $user_id );
 	}
 
 	/**
@@ -2129,18 +2249,47 @@ class Feed_Parser_ActivityPub extends Feed_Parser_V2 {
 				'id'     => $actor . '#activitypub_announce-' . \preg_replace( '~^https?://~', '', $url ),
 			)
 		);
+		$activity->set_published( \gmdate( 'Y-m-d\TH:i:s\Z', time() ) );
 
-		$follower_inboxes  = \Activitypub\Collection\Followers::get_inboxes( $user_id );
-		$mentioned_inboxes = \Activitypub\Mention::get_inboxes( $activity->get_cc() );
-
-		$inboxes = array_merge( $follower_inboxes, $mentioned_inboxes );
+		$inboxes = apply_filters( 'activitypub_send_to_inboxes', array(), $user_id, $activity );
 		$inboxes = array_unique( $inboxes );
+
+		if ( empty( $inboxes ) ) {
+			$message = sprintf(
+				// translators: %s is the URL of the post.
+				__( 'Unannounce failed for %s', 'friends' ),
+				'<a href="' . esc_url( $url ) . '">' . $url . '</a>'
+			);
+
+			$details = array(
+				'url'   => $url,
+				'error' => __( 'No inboxes to send to.', 'friends' ),
+			);
+
+			Logging::log( 'unannounce-failed', $message, $details, self::SLUG, $user_id );
+			return;
+		}
 
 		$json = $activity->to_json();
 
+		$report = array();
 		foreach ( $inboxes as $inbox ) {
-			\Activitypub\safe_remote_post( $inbox, $json, $user_id );
+			$response = \Activitypub\safe_remote_post( $inbox, $json, $user_id );
+			$report[ $inbox ] = wp_remote_retrieve_response_message( $response );
 		}
+
+		$message = sprintf(
+			// translators: %s is the URL of the post.
+			__( 'Unannounced %s', 'friends' ),
+			'<a href="' . esc_url( $url ) . '">' . $url . '</a>'
+		);
+
+		$details = array(
+			'url'     => $url,
+			'inboxes' => $report,
+		);
+
+		Logging::log( 'unannounce', $message, $details, self::SLUG, $user_id );
 	}
 
 	/**
@@ -2391,5 +2540,93 @@ class Feed_Parser_ActivityPub extends Feed_Parser_V2 {
 			}
 		}
 		return $metadata;
+	}
+
+	public function ajax_delete_follower() {
+		if ( ! current_user_can( Friends::REQUIRED_ROLE ) ) {
+			wp_send_json_error( 'error' );
+		}
+		check_ajax_referer( 'friends-followers' );
+
+		if ( ! isset( $_POST['id'] ) ) {
+			return wp_send_json_error( 'missing-id' );
+		}
+
+		if ( ! \Activitypub\Collection\Followers::remove_follower( get_current_user_id(), sanitize_text_field( wp_unslash( $_POST['id'] ) ) ) ) {
+			return wp_send_json_error( 'Follower not found' );
+		}
+		wp_send_json_success();
+	}
+
+	public function ajax_preview() {
+		if ( ! current_user_can( Friends::REQUIRED_ROLE ) ) {
+			wp_send_json_error( 'error' );
+		}
+
+		check_ajax_referer( 'friends-preview' );
+
+		if ( ! isset( $_POST['url'] ) || ! filter_input( INPUT_POST, 'url', FILTER_VALIDATE_URL ) ) {
+			wp_send_json_error( 'missing-url' );
+		}
+
+		$items = $this->friends_feed->preview( self::SLUG, sanitize_text_field( wp_unslash( $_POST['url'] ) ) );
+		if ( is_wp_error( $items ) ) {
+			wp_send_json_error( $items );
+		}
+
+		$followers = __( '? followers', 'friends' );
+		if ( isset( $_POST['followers'] ) && filter_input( INPUT_POST, 'followers', FILTER_VALIDATE_URL ) ) {
+			$data = \Activitypub\safe_remote_get( sanitize_text_field( wp_unslash( $_POST['followers'] ) ) );
+			if ( ! is_wp_error( $data ) ) {
+				$body = json_decode( wp_remote_retrieve_body( $data ), true );
+				if ( isset( $body['totalItems'] ) ) {
+					$followers = sprintf(
+						// translators: %s is the number of followers.
+						_n( '%s follower', '%s followers', $body['totalItems'], 'friends' ),
+						$body['totalItems']
+					);
+				}
+			}
+		}
+		$following = __( '? following', 'friends' );
+		if ( isset( $_POST['following'] ) && filter_input( INPUT_POST, 'following', FILTER_VALIDATE_URL ) ) {
+			$data = \Activitypub\safe_remote_get( sanitize_text_field( wp_unslash( $_POST['following'] ) ) );
+			if ( ! is_wp_error( $data ) ) {
+				$body = json_decode( wp_remote_retrieve_body( $data ), true );
+				if ( isset( $body['totalItems'] ) ) {
+					$following = sprintf(
+						// translators: %s is the number of followings.
+						_n( '%s following', '%s following', $body['totalItems'], 'friends' ),
+						$body['totalItems']
+					);
+				}
+			}
+		}
+
+		$posts = '<div class="posts">';
+		foreach ( $items as $item ) {
+			$posts .= '<div class="card">';
+			$posts .= '<header class="card-header">';
+			$posts .= '<div class="post-meta">';
+			$posts .= '<div class="permalink">';
+			if ( $item->permalink ) {
+				$posts .= '<a href="' . esc_url( $item->permalink ) . '">';
+			}
+			if ( $item->date ) {
+				$posts .= esc_html( $item->date );
+			}
+			if ( $item->permalink ) {
+				$posts .= '</a>';
+			}
+			$posts .= '</div>';
+			$posts .= '</div>';
+			$posts .= '</header>';
+			$posts .= '<div class="card-body">';
+			$posts .= wp_kses_post( $item->content );
+			$posts .= '</div>';
+			$posts .= '</div>';
+		}
+
+		wp_send_json_success( compact( 'posts', 'followers', 'following' ) );
 	}
 }

@@ -178,6 +178,12 @@ class Admin {
 			add_action( 'load-' . $page_type . '_page_edit-friend-rules', array( $this, 'process_admin_edit_friend_rules' ) );
 		}
 
+		if ( isset( $_GET['page'] ) && 'friends-logs' === $_GET['page'] ) {
+			// translators: as in log file.
+			$title = __( 'Log', 'friends' );
+			add_submenu_page( 'friends', $title, $title, $required_role, 'friends-logs', array( $this, 'render_friends_logs' ) );
+		}
+
 		if ( isset( $_GET['page'] ) && 'unfriend' === $_GET['page'] ) {
 			$user = new User( intval( $_GET['user'] ) );
 			if ( $user ) {
@@ -851,6 +857,8 @@ class Admin {
 			wp_send_json_error( 'unknown-user' );
 		}
 
+		add_filter( 'notify_about_new_friend_post', '__return_false', 999 );
+
 		$friend_user->retrieve_posts_from_active_feeds();
 
 		wp_send_json_success();
@@ -1331,7 +1339,7 @@ class Admin {
 
 			$show_on_dashboard = filter_input( INPUT_POST, 'show_on_dashboard', FILTER_VALIDATE_BOOLEAN );
 			$already_on_dashboard = false;
-			$widgets = get_user_option( 'friends_dashboard_widgets', $user_id );
+			$widgets = get_user_option( 'friends_dashboard_widgets', get_current_user_id() );
 			if ( ! $widgets ) {
 				$widgets = array();
 			}
@@ -1488,12 +1496,13 @@ class Admin {
 		$friend = $this->check_admin_edit_friend();
 
 		$already_on_dashboard = false;
-		$widgets = get_user_option( 'friends_dashboard_widgets', $user_id );
+		$widgets = get_user_option( 'friends_dashboard_widgets', get_current_user_id() );
+
 		if ( ! $widgets ) {
 			$widgets = array();
 		}
 		foreach ( $widgets as $widget ) {
-			if ( $widget['friend'] === $friend->user_login ) {
+			if ( ! empty( $widget['friend'] ) && $widget['friend'] === $friend->user_login ) {
 				$already_on_dashboard = true;
 				break;
 			}
@@ -1839,14 +1848,27 @@ class Admin {
 				return $this->process_admin_add_friend_response( $friend_user, $vars );
 			}
 
-			if ( isset( $vars['friendship'] ) ) {
-				$rest_url = $vars['friendship'];
-			} else {
-				$rest_url = $this->friends->rest->get_friends_rest_url( $feeds );
+			if ( get_option( 'friends_enable_wp_friendships' ) ) {
+				if ( isset( $vars['friendship'] ) ) {
+					$rest_url = $vars['friendship'];
+				} else {
+					$rest_url = $this->friends->rest->get_friends_rest_url( $feeds );
+				}
 			}
 		} else {
 			if ( str_starts_with( $friend_url, home_url() ) ) {
 				return new \WP_Error( 'friend-yourself', __( 'It seems like you sent a friend request to yourself.', 'friends' ) );
+			}
+
+			if ( preg_match( '#https://.*?@threads.net#', $friend_url ) ) {
+				return new \WP_Error(
+					'threads-net',
+					sprintf(
+					// translators: %s is a URL.
+						__( '⚠️ This user has <a href="%s">not enabled Fediverse sharing on their Threads.net account</a>.', 'friends' ),
+						'https://about.fb.com/news/2023/07/introducing-threads-new-app-text-sharing/'
+					)
+				);
 			}
 
 			if ( ! Friends::check_url( $friend_url ) ) {
@@ -1870,13 +1892,45 @@ class Admin {
 			if ( ! $feeds ) {
 				return new \WP_Error( 'no-feed-found', __( 'No suitable feed was found at the provided address.', 'friends' ) );
 			}
+			$has_subscribable_feeds = false;
+			$has_threads_net = false;
+			foreach ( $feeds as $url => $feed ) {
+				if ( 0 === strpos( $url, 'https://threads.net/' ) ) {
+					$has_threads_net = true;
+				}
+				if ( isset( $feed['autoselect'] ) && $feed['autoselect'] ) {
+					$has_subscribable_feeds = true;
+					break;
+				}
+				if ( 'unsupported' !== $feed['parser'] ) {
+					$has_subscribable_feeds = true;
+					break;
+				}
+			}
+
+			if ( ! $has_subscribable_feeds && $has_threads_net ) {
+				$args['feeds_notice'] = sprintf(
+					// translators: %s is a URL.
+					__( '⚠️ This user has <a href="%s">not enabled Fediverse sharing on their Threads.net account</a>.', 'friends' ),
+					'https://about.fb.com/news/2023/07/introducing-threads-new-app-text-sharing/'
+				);
+			}
+
+			$better_user_login = User::get_user_login_from_feeds( $feeds );
+			if ( $better_user_login ) {
+				$friend_user_login = $better_user_login;
+			}
 
 			$better_display_name = User::get_display_name_from_feeds( $feeds );
 			if ( $better_display_name ) {
 				$friend_display_name = $better_display_name;
+				if ( ! $better_user_login ) {
+					$friend_user_login = strtolower( str_replace( ' ', '-', sanitize_user( $better_display_name ) ) );
+				}
 			}
-
-			$rest_url = $this->friends->rest->get_friends_rest_url( $feeds );
+			if ( get_option( 'friends_enable_wp_friendships' ) ) {
+				$rest_url = $this->friends->rest->get_friends_rest_url( $feeds );
+			}
 		}
 
 		if ( $rest_url ) {
@@ -1988,11 +2042,12 @@ class Admin {
 				<?php
 				exit;
 			}
-			$parser_name = false;
+			$parser = false;
 			if ( isset( $_GET['parser'] ) ) {
 				$parser_name = $this->friends->feed->get_registered_parser( sanitize_text_field( wp_unslash( $_GET['parser'] ) ) );
+				$parser = $this->friends->feed->get_feed_parser( sanitize_text_field( wp_unslash( $_GET['parser'] ) ) );
 			}
-			if ( ! $parser_name ) {
+			if ( ! $parser ) {
 				?>
 				<div id="message" class="updated notice is-dismissible"><p><?php esc_html_e( 'An unknown parser name was supplied.', 'friends' ); ?></p>
 				</div>
@@ -2025,7 +2080,7 @@ class Admin {
 			if ( isset( $_GET['feed'] ) ) {
 				$feed_id = intval( $_GET['feed'] );
 			}
-			$items = $this->friends->feed->preview( $parser_name, $url, $feed_id );
+			$items = $this->friends->feed->preview( $parser, $url, $feed_id );
 			if ( is_wp_error( $items ) ) {
 				?>
 				<div id="message" class="updated notice is-dismissible"><p><?php echo esc_html( $items->get_error_message() ); ?></p>
@@ -2134,7 +2189,7 @@ class Admin {
 				} else {
 					$args['friend_url'] = $friend_url;
 				}
-			} elseif ( preg_match( '/^@?' . Feed_Parser_ActivityPub::ACTIVITYPUB_USERNAME_REGEXP . '$/i', $friend_url ) ) {
+			} elseif ( class_exists( 'Friends\Feed_Parser_ActivityPub' ) && preg_match( '/^@?' . Feed_Parser_ActivityPub::ACTIVITYPUB_USERNAME_REGEXP . '$/i', $friend_url ) ) {
 				$args['friend_url'] = $friend_url;
 			}
 		}
@@ -2194,6 +2249,12 @@ class Admin {
 			update_option( 'friends_notification_keywords', $keywords );
 		}
 
+		if ( isset( $_POST['keyword_notification_override'] ) && boolval( $_POST['keyword_notification_override'] ) ) {
+			delete_user_option( get_current_user_id(), 'friends_keyword_notification_override_disabled' );
+		} else {
+			update_user_option( get_current_user_id(), 'friends_keyword_notification_override_disabled', 1 );
+		}
+
 		if ( isset( $_POST['new_post_notification'] ) && boolval( $_POST['new_post_notification'] ) ) {
 			delete_user_option( get_current_user_id(), 'friends_no_new_post_notification' );
 		} else {
@@ -2204,6 +2265,28 @@ class Admin {
 			delete_user_option( get_current_user_id(), 'friends_no_friend_request_notification' );
 		} else {
 			update_user_option( get_current_user_id(), 'friends_no_friend_request_notification', 1 );
+		}
+
+		if ( isset( $_POST['friend_follower_notification'] ) && boolval( $_POST['friend_follower_notification'] ) ) {
+			delete_user_option( get_current_user_id(), 'friends_no_friend_follower_notification' );
+		} else {
+			update_user_option( get_current_user_id(), 'friends_no_friend_follower_notification', 1 );
+		}
+
+		foreach ( get_post_format_slugs() as $post_format ) {
+			if ( isset( $_POST[ 'new_post_format_notification_' . $post_format ] ) && boolval( $_POST[ 'new_post_format_notification_' . $post_format ] ) ) {
+				delete_user_option( get_current_user_id(), 'friends_no_new_post_format_notification_' . $post_format );
+			} else {
+				update_user_option( get_current_user_id(), 'friends_no_new_post_format_notification_' . $post_format, 1 );
+			}
+		}
+
+		foreach ( array_keys( $this->friends->feed->get_registered_parsers() ) as $parser ) {
+			if ( isset( $_POST[ 'new_post_by_parser_notification_' . $parser ] ) && boolval( $_POST[ 'new_post_by_parser_notification_' . $parser ] ) ) {
+				delete_user_option( get_current_user_id(), 'friends_no_new_post_by_parser_notification_' . $parser );
+			} else {
+				update_user_option( get_current_user_id(), 'friends_no_new_post_by_parser_notification_' . $parser, 1 );
+			}
 		}
 
 		if ( empty( $_POST['friend_listed'] ) ) {
@@ -2274,19 +2357,27 @@ class Admin {
 			$hide_from_friends_page = array();
 		}
 
+		$args = array(
+			'friend_users'                   => $friend_users->get_results(),
+			'friends_settings_url'           => add_query_arg( '_wp_http_referer', remove_query_arg( '_wp_http_referer' ), self_admin_url( 'admin.php?page=friends-settings' ) ),
+			'hide_from_friends_page'         => $hide_from_friends_page,
+			'no_friend_request_notification' => get_user_option( 'friends_no_friend_request_notification' ),
+			'keyword_override_disabled'      => get_user_option( 'friends_keyword_notification_override_disabled' ),
+			'no_new_post_notification'       => get_user_option( 'friends_no_new_post_notification' ),
+			'no_keyword_notification'        => get_user_option( 'friends_no_keyword_notification' ),
+			'notification_keywords'          => Feed::get_all_notification_keywords(),
+			'active_keywords'                => Feed::get_active_notification_keywords(),
+			'feed_parsers'                   => $this->friends->feed->get_registered_parsers(),
+		);
+
+		if ( class_exists( '\Activitypub\Notification' ) ) {
+			$args['no_friend_follower_notification'] = get_user_option( 'friends_no_friend_follower_notification' );
+		}
+
 		Friends::template_loader()->get_template_part(
 			'admin/notification-manager',
 			null,
-			array(
-				'friend_users'                   => $friend_users->get_results(),
-				'friends_settings_url'           => add_query_arg( '_wp_http_referer', remove_query_arg( '_wp_http_referer' ), self_admin_url( 'admin.php?page=friends-settings' ) ),
-				'hide_from_friends_page'         => $hide_from_friends_page,
-				'no_friend_request_notification' => get_user_option( 'friends_no_friend_request_notification' ),
-				'no_new_post_notification'       => get_user_option( 'friends_no_new_post_notification' ),
-				'no_keyword_notification'        => get_user_option( 'friends_no_keyword_notification' ),
-				'notification_keywords'          => Feed::get_all_notification_keywords(),
-				'active_keywords'                => Feed::get_active_notification_keywords(),
-			)
+			$args
 		);
 
 		Friends::template_loader()->get_template_part( 'admin/settings-footer' );
@@ -2441,6 +2532,73 @@ class Admin {
 	}
 
 	public function process_admin_import_export() {
+		if ( ! isset( $_REQUEST['_wpnonce'] ) || ! wp_verify_nonce( sanitize_key( $_REQUEST['_wpnonce'] ), 'friends-settings' ) ) {
+			return;
+		}
+
+		if ( ! Friends::has_required_privileges() ) {
+			return;
+		}
+
+		if ( isset( $_FILES['opml']['tmp_name'] ) ) {
+			$opml = file_get_contents( $_FILES['opml']['tmp_name'] ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+			$feeds = Import::opml( $opml );
+			$users_created = count( $feeds );
+			$feeds_imported = 0;
+			foreach ( $feeds as $user => $user_feeds ) {
+				$feeds_imported += count( $user_feeds );
+			}
+			?>
+			<div class="friends-notice notice notice-success is-dismissible">
+				<p>
+					<?php
+					echo esc_html(
+						sprintf(
+							// translators: %d is the number of users imported.
+							_n( 'Imported %d user.', 'Imported %d users.', $users_created, 'friends' ),
+							$users_created
+						)
+					);
+					?>
+					<?php
+					echo esc_html(
+						sprintf(
+							// translators: %d is the number of feeds imported.
+							_n( 'They had %d feed.', 'They had %d feeds.', $feeds_imported, 'friends' ),
+							$feeds_imported
+						)
+					);
+					?>
+				</p>
+			</div>
+			<?php
+		}
+	}
+
+	public function render_friends_logs() {
+		Friends::template_loader()->get_template_part(
+			'admin/settings-header',
+			null,
+			array(
+				'active' => 'friends-logs',
+				'title'  => __( 'Friends', 'friends' ),
+			)
+		);
+		$this->check_admin_settings();
+
+		?>
+		<h1><?php esc_html_e( 'Logs', 'friends' ); ?></h1>
+		<?php
+
+		Friends::template_loader()->get_template_part(
+			'admin/logs',
+			null,
+			array(
+				'logs' => Logging::get_logs(),
+			)
+		);
+
+		Friends::template_loader()->get_template_part( 'admin/settings-footer' );
 	}
 
 	/**
@@ -2641,8 +2799,14 @@ class Admin {
 		if ( 'friends_posts' !== $column_name ) {
 			return $output;
 		}
-		$numposts = count_user_posts( $user_id, apply_filters( 'friends_frontend_post_types', array( 'post' ) ) );
 		$user = User::get_user_by_id( $user_id );
+		if ( ! $user ) {
+			return $output;
+		}
+
+		$post_status_counts = $user->get_post_count_by_post_format();
+		$numposts = array_sum( $post_status_counts );
+
 		return sprintf(
 			'<a href="%s" class="edit"><span aria-hidden="true">%s</span><span class="screen-reader-text">%s</span></a>',
 			$user ? $user->get_local_friends_page_url() : "edit.php?author={$user_id}",
@@ -2773,6 +2937,10 @@ class Admin {
 			$my_url = home_url();
 			$my_admin_url = site_url();
 			$on_my_own_site = true;
+		}
+
+		if ( ! $my_url ) {
+			return;
 		}
 
 		if ( ! $on_my_own_site && $my_own_site ) {
@@ -3074,6 +3242,9 @@ class Admin {
 	}
 
 	public function add_dashboard_widgets() {
+		if ( ! Friends::has_required_privileges() ) {
+			return;
+		}
 		$user_id = get_current_user_id();
 		$widgets = get_user_option( 'friends_dashboard_widgets', $user_id );
 		if ( ! $widgets ) {
