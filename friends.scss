@@ -77,7 +77,7 @@ div {
 }
 
 .off-canvas .off-canvas-content {
-	margin-top: 32px;
+	// margin-top: 32px;
 	padding-top: 1rem;
 	padding-left: 1rem;
 	padding-right: 1rem;
@@ -105,7 +105,7 @@ div {
 }
 
 .off-canvas .off-canvas-sidebar {
-	margin-top: 32px;
+	// margin-top: 32px;
 	width: 12rem;
 	background: #f7f8f9;
 }
@@ -802,4 +802,8 @@ h2#page-title a.dashicons {
 	.ellipsis::after {
 		content: "…"
 	}
+}
+
+#wpadminbar{
+	display: none !important
 }
