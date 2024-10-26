@@ -418,3 +418,7 @@ jQuery( function ( $ ) {
 		}
 	}, 500 );
 } );
+
+function resizeIframe(obj) {
+    obj.style.height = window.screen.height + 'px';
+}
